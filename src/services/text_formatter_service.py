@@ -9,7 +9,6 @@ from .time_normalizer import normalize_times_in_text
 from .link_converter import convert_markdown_links_in_text
 from .text_formatter import convert_bold_markdown_to_html
 from .id_cleaner import remove_id_brackets_from_text
-from .greeting_handler import add_greeting_if_needed
 
 
 class TextFormatterService:
@@ -46,9 +45,6 @@ class TextFormatterService:
         
         # Заменяем Markdown жирный текст (**текст**) на HTML теги (<b>текст</b>)
         text = convert_bold_markdown_to_html(text)
-        
-        # Добавляем приветствие для первого сообщения или первого сообщения в день (если нужно)
-        text = add_greeting_if_needed(text, is_first_message, messages, current_datetime)
         
         # Удаляем ID в скобках из сообщения
         text = remove_id_brackets_from_text(text)

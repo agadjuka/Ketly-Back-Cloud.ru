@@ -1,7 +1,6 @@
 """
 Модуль для работы с LangGraph (OpenAI API)
 """
-import time
 from datetime import datetime
 import pytz
 
@@ -11,7 +10,6 @@ from .logger_service import logger
 from ..graph.main_graph import create_main_graph
 from .langgraph_service import LangGraphService
 from ..storage.checkpointer import get_postgres_checkpointer, clear_thread_memory
-import requests
 
 
 class AgentService:
@@ -23,10 +21,6 @@ class AgentService:
         
         # Ленивая инициализация LangGraph
         self._langgraph_service = None
-        
-        # Инициализация кэша времени
-        self._time_cache = None
-        self._time_cache_timestamp = 0
     
     @property
     def langgraph_service(self) -> LangGraphService:
@@ -34,51 +28,6 @@ class AgentService:
         if self._langgraph_service is None:
             self._langgraph_service = LangGraphService()
         return self._langgraph_service
-    
-    def _get_moscow_time(self) -> str:
-        """Получить текущее время и дату в московском часовом поясе через внешний API"""
-        current_time = time.time()
-        
-        # Используем кэш, если прошло меньше минуты
-        if self._time_cache and (current_time - self._time_cache_timestamp) < 60:
-            return self._time_cache
-        
-        try:
-            # Получаем точное время через WorldTimeAPI
-            response = requests.get(
-                'http://worldtimeapi.org/api/timezone/Europe/Moscow',
-                timeout=2
-            )
-            response.raise_for_status()
-            data = response.json()
-            datetime_str = data['datetime']
-            
-            # Преобразуем строку в datetime
-            if datetime_str.endswith('Z'):
-                datetime_str = datetime_str[:-1] + '+00:00'
-            moscow_time = datetime.fromisoformat(datetime_str)
-            
-            # Форматируем
-            date_time_str = moscow_time.strftime("%Y-%m-%d %H:%M")
-            result = f"Текущее время: {date_time_str}"
-            
-            # Сохраняем в кэш
-            self._time_cache = result
-            self._time_cache_timestamp = current_time
-            
-            return result
-        except Exception:
-            # Fallback на системное время
-            moscow_tz = pytz.timezone('Europe/Moscow')
-            moscow_time = datetime.now(moscow_tz)
-            date_time_str = moscow_time.strftime("%Y-%m-%d %H:%M")
-            result = f"Текущее время: {date_time_str}"
-            
-            # Кэшируем fallback тоже
-            self._time_cache = result
-            self._time_cache_timestamp = current_time
-            
-            return result
     
     async def send_to_agent_langgraph(self, chat_id: str, user_text: str) -> dict:
         """
@@ -93,9 +42,8 @@ class AgentService:
             logger.error(f"Не удалось преобразовать chat_id={chat_id} в telegram_user_id")
             telegram_user_id = 0
         
-        # Добавляем московское время в начало сообщения
-        moscow_time = self._get_moscow_time()
-        user_message_text = f"[{moscow_time}] {user_text}"
+        # Используем сообщение пользователя без изменений
+        user_message_text = user_text
         
         logger.info(f"Обработка сообщения от chat_id={chat_id}, telegram_user_id={telegram_user_id}")
         
@@ -109,36 +57,47 @@ class AgentService:
                 config = {"configurable": {"thread_id": str(telegram_user_id)}}
                 
                 # Пытаемся восстановить предыдущее состояние из checkpointer
-                # чтобы сохранить extracted_info между вызовами
+                # чтобы сохранить extracted_info и demo_config между вызовами
                 previous_extracted_info = None
+                previous_demo_config = None
+                previous_stage = None
                 try:
                     # Получаем последнее состояние из checkpointer
                     state_snapshot = await checkpointer.aget(config)
                     if state_snapshot:
                         previous_values = state_snapshot.values if hasattr(state_snapshot, 'values') else state_snapshot.get('values', {})
                         previous_extracted_info = previous_values.get("extracted_info")
-                        logger.debug(f"Восстановлено extracted_info из checkpointer: {previous_extracted_info}")
+                        previous_demo_config = previous_values.get("demo_config")
+                        previous_stage = previous_values.get("stage")
+                        logger.info(f"📥 Восстановлено из checkpointer: extracted_info={bool(previous_extracted_info)}, demo_config={bool(previous_demo_config)}, stage={previous_stage}")
+                        if previous_demo_config:
+                            logger.info(f"📥 demo_config содержит: niche={previous_demo_config.get('niche')}, company_name={previous_demo_config.get('company_name')}")
                 except Exception as e:
-                    logger.debug(f"Не удалось восстановить extracted_info из checkpointer: {e}")
+                    logger.debug(f"Не удалось восстановить состояние из checkpointer: {e}")
                 
                 # Формируем входные данные - ТОЛЬКО новое сообщение
                 # История граф подтянет сам из БД через checkpointer!
                 # extracted_info не передаем, чтобы не перезаписать восстановленное значение
+                # ВАЖНО: НЕ передаем stage, чтобы не перезаписать сохранённое значение!
                 input_data = {
                     "messages": [HumanMessage(content=user_message_text)],
                     "message": user_message_text,  # Для обратной совместимости с узлами
                     "chat_id": chat_id,
-                    "stage": None,
+                    # НЕ передаем stage - оно должно восстановиться из checkpointer автоматически
                     # НЕ передаем extracted_info - оно должно восстановиться из checkpointer автоматически
                     # Если нужно явно установить, используем previous_extracted_info
                     "answer": "",
                     "manager_alert": None
                 }
                 
-                # Если удалось восстановить extracted_info, добавляем его в input_data
+                # Если удалось восстановить данные, добавляем их в input_data
                 # Это нужно, чтобы LangGraph правильно объединил состояние
                 if previous_extracted_info is not None:
                     input_data["extracted_info"] = previous_extracted_info
+                if previous_demo_config is not None:
+                    input_data["demo_config"] = previous_demo_config
+                if previous_stage is not None:
+                    input_data["stage"] = previous_stage
                 
                 # Запускаем граф и обрабатываем поток событий
                 # Используем ainvoke для получения финального состояния

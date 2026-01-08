@@ -133,9 +133,14 @@ class MainGraph:
         message = state.get("message", "")
         chat_id = state.get("chat_id")
         
+        # Получаем текущую стадию из состояния (восстанавливается через checkpointer)
+        # КЛЮЧЕВОЕ ОТЛИЧИЕ: Не обращаемся к YDB, используем state["stage"]
+        current_stage = state.get("stage")
+        
         # ОБРАБОТКА КОМАНДЫ "СТОП" - выход из демо-режима
-        if message.strip().lower() == "стоп":
-            logger.info(f"🛑 Обнаружена команда 'стоп' для chat_id={chat_id}")
+        # Работает только если мы в demo режиме
+        if current_stage == "demo" and message.strip().lower() == "стоп":
+            logger.info(f"🛑 Обнаружена команда 'стоп' для chat_id={chat_id} в demo режиме")
             logger.info(f"Переключение с demo на admin для chat_id={chat_id}")
             
             # Обновляем стадию на admin в состоянии
@@ -144,10 +149,6 @@ class MainGraph:
                 "stage": "admin",
                 "answer": "Понравилась ли вам демонстрация? Если хотите, могу связать Вас с нашим менеджером для обсуждения сотрудничества."
             }
-        
-        # Получаем текущую стадию из состояния (восстанавливается через checkpointer)
-        # КЛЮЧЕВОЕ ОТЛИЧИЕ: Не обращаемся к YDB, используем state["stage"]
-        current_stage = state.get("stage")
         
         if current_stage:
             logger.info(f"📌 Найдена сохраненная стадия в checkpointer для chat_id={chat_id}: {current_stage}")
@@ -233,7 +234,9 @@ class MainGraph:
             
             logger.info(f"📞 CallManager был вызван через инструмент в агенте {agent_name}, chat_id: {chat_id}")
             
+            # КРИТИЧНО: Сохраняем все существующие поля из state
             return {
+                **state,  # Сохраняем все существующие поля
                 "messages": new_messages,
                 "answer": escalation_result.get("user_message", result.get("reply", "")),
                 "manager_alert": escalation_result.get("manager_alert", result.get("manager_alert")),
@@ -245,7 +248,9 @@ class MainGraph:
         # Обычный ответ агента
         answer = result.get("reply", "")
         
+        # КРИТИЧНО: Сохраняем все существующие поля из state, чтобы не потерять demo_config, extracted_info и т.д.
         return {
+            **state,  # Сохраняем все существующие поля
             "messages": new_messages,
             "answer": answer,
             "agent_name": agent_name,
@@ -264,8 +269,9 @@ class MainGraph:
         
         result = self._process_agent_result(self.admin_agent, message, history, chat_id, state, "AdminAgent")
         
-        # Сохраняем стадию в состоянии (checkpointer автоматически сохранит)
-        result["stage"] = "admin"
+        # НЕ устанавливаем stage="admin" здесь, если будет переход в demo
+        # stage будет установлен в _handle_demo, если произойдёт переключение
+        # Если не будет перехода в demo, то stage останется "admin" из предыдущего состояния
         
         return result
     
@@ -366,6 +372,11 @@ class MainGraph:
         # Checkpointer автоматически сохранит это в PostgreSQL
         result["stage"] = "demo"
         result["demo_config"] = config
+        
+        # Логируем для отладки
+        logger.info(f"💾 [DEMO] Сохраняю в result: stage={result.get('stage')}, demo_config={bool(result.get('demo_config'))}")
+        if result.get("demo_config"):
+            logger.info(f"💾 [DEMO] demo_config содержит: niche={result['demo_config'].get('niche')}, company_name={result['demo_config'].get('company_name')}")
         
         return result
     
