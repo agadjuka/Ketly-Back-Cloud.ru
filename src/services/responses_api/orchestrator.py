@@ -278,6 +278,23 @@ class ResponsesOrchestrator:
                             "content": error_result
                         })
                 
+                # КРИТИЧНО: Проверяем, был ли вызван SwitchToDemoTool
+                # Если да, то НЕ вызываем LLM снова, а возвращаем пустой ответ
+                # Граф обработает маркер и переключит стадию
+                switch_to_demo_called = any(tc_info["name"] == "SwitchToDemoTool" for tc_info in tool_calls_info)
+                
+                if switch_to_demo_called:
+                    logger.info("🔄 SwitchToDemoTool вызван, прерываем цикл orchestrator без вызова LLM")
+                    # Извлекаем новые сообщения (AIMessage с tool_calls и ToolMessage)
+                    start_index = history_length + 1 if user_message_added else history_length
+                    new_messages = messages[start_index:] if len(messages) > start_index else []
+                    return {
+                        "reply": "",  # Пустой ответ - граф обработает переход
+                        "tool_calls": tool_calls_info,
+                        "raw_response": response if 'response' in locals() else None,
+                        "new_messages": new_messages,
+                    }
+                
                 # Продолжаем цикл, чтобы модель могла ответить на результаты инструментов
                 continue
             
@@ -293,10 +310,16 @@ class ResponsesOrchestrator:
         if iteration >= max_iterations:
             logger.warning(f"Достигнут лимит итераций ({max_iterations}). Прекращаем цикл.")
         
-        # Если ответ пустой, возвращаем сообщение об ошибке
+        # Если ответ пустой, проверяем был ли вызван SwitchToDemoTool
         if not reply_text or not reply_text.strip():
-            logger.warning("Получен пустой ответ от API")
-            reply_text = "Извините, не удалось получить ответ. Пожалуйста, попробуйте еще раз."
+            # Если был вызван SwitchToDemoTool, пустой ответ это нормально
+            switch_to_demo_called = any(tc_info["name"] == "SwitchToDemoTool" for tc_info in tool_calls_info)
+            if switch_to_demo_called:
+                logger.info("✅ Пустой ответ после SwitchToDemoTool - это норма")
+                reply_text = ""  # Оставляем пустым
+            else:
+                logger.warning("Получен пустой ответ от API")
+                reply_text = "Извините, не удалось получить ответ. Пожалуйста, попробуйте еще раз."
         
         # КРИТИЧНО: Извлекаем только НОВЫЕ сообщения (те, что были добавлены в ходе этого вызова)
         # Это все сообщения после истории (исключаем user_message, так как он уже есть в state["messages"])
