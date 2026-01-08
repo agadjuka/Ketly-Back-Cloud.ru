@@ -49,7 +49,7 @@ class AdminPanelService:
         """
         user_id = user.id
 
-        # Проверяем, является ли это веб-пользователем (UUID)
+        # Проверяем, является ли это веб-пользвателем (UUID)
         user_id_str = str(user_id)
         uuid_pattern = r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
         is_web_user = bool(re.match(uuid_pattern, user_id_str, re.IGNORECASE))
