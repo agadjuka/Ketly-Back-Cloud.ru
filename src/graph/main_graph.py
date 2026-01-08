@@ -1,7 +1,7 @@
 """
 Основной граф состояний для обработки всех стадий диалога (Responses API)
 """
-import asyncio
+import json
 from typing import Literal
 from langgraph.graph import StateGraph, START, END
 from .conversation_state import ConversationState
@@ -13,7 +13,6 @@ from ..agents.demo_setup_agent import DemoSetupAgent
 
 from ..services.langgraph_service import LangGraphService
 from ..services.logger_service import logger
-from ..services.session_config_service import get_session_config_service
 
 
 def create_main_graph(langgraph_service: LangGraphService, checkpointer):
@@ -274,11 +273,14 @@ class MainGraph:
         """
         Обработка демонстрационных функций
         
+        КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: Конфигурация хранится в state["demo_config"]
+        
         Логика работы:
-        1. Проверяет наличие конфигурации в SessionConfigService для данного thread_id (chat_id)
+        1. Проверяет наличие конфигурации в state["demo_config"]
         2. Если конфигурации нет - вызывает demo-setup агента для создания конфигурации
         3. Demo-setup агент получает текущее сообщение и историю диалога
-        4. После получения конфигурации создает demo-агента с заполненным промптом
+        4. После получения конфигурации сохраняет её в state["demo_config"]
+        5. Создает demo-агента с заполненным промптом на основе конфигурации
         """
         message = state["message"]
         messages = state.get("messages", [])
@@ -287,20 +289,12 @@ class MainGraph:
         
         logger.info(f"🎯 [DEMO] Обработка демо-режима. chat_id={chat_id}, message={message[:100]}")
         
-        # Получаем сервис для работы с конфигурациями сессий
-        session_config_service = get_session_config_service()
-        
-        # Используем chat_id как thread_id
-        thread_id = chat_id if chat_id else "unknown"
-        
-        logger.info(f"🔍 [DEMO] Проверка наличия конфигурации в базе данных для thread_id={thread_id}")
-        
-        # Проверяем наличие конфигурации в SessionConfigs
-        config = asyncio.run(session_config_service.load_demo_config(thread_id))
+        # КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: Получаем конфигурацию из состояния
+        config = state.get("demo_config")
         
         # Если конфигурации нет, вызываем demo-setup агента
         if not config:
-            logger.info(f"❌ [DEMO] Запись в базе данных НЕ найдена для thread_id={thread_id}")
+            logger.info(f"❌ [DEMO] Конфигурация НЕ найдена в состоянии для chat_id={chat_id}")
             logger.info(f"📞 [DEMO] Обращаемся к demo-setup агенту для получения конфигурации")
             
             # Вызываем demo-setup агента
@@ -312,37 +306,34 @@ class MainGraph:
             logger.info(f"📥 [DEMO] Demo-setup агент прислал ответ (длина: {len(setup_answer)} символов)")
             logger.debug(f"📥 [DEMO] Ответ demo-setup агента: {setup_answer[:500]}")
             
-            # Обрабатываем ответ demo-setup агента и сохраняем конфигурацию
-            user_id = chat_id  # Используем chat_id как user_id
+            # Парсим JSON из ответа
+            config = self._parse_json_from_response(setup_answer)
             
-            logger.info(f"💾 [DEMO] Обрабатываю ответ demo-setup агента и сохраняю в базу данных для thread_id={thread_id}")
-            
-            saved_config = asyncio.run(session_config_service.process_setup_response(
-                thread_id=thread_id,
-                user_id=user_id,
-                response_text=setup_answer
-            ))
-            
-            if saved_config:
-                config = saved_config
-                logger.info(f"✅ [DEMO] Конфигурация успешно сохранена и загружена для thread_id={thread_id}")
+            if config:
+                # Валидация обязательных полей
+                required_fields = ["niche", "company_name", "persona_instruction", "welcome_message"]
+                missing_fields = [field for field in required_fields if field not in config]
+                
+                if missing_fields:
+                    logger.error(f"❌ [DEMO] Отсутствуют обязательные поля в конфигурации: {missing_fields}")
+                    logger.error(f"❌ [DEMO] Использую базовый demo агент без конфигурации")
+                    result = self._process_agent_result(self.demo_agent, message, history, chat_id, state, "DemoAgent")
+                    result["stage"] = "demo"
+                    return result
+                
+                logger.info(f"✅ [DEMO] Конфигурация успешно извлечена из ответа demo-setup агента")
                 logger.info(f"📋 [DEMO] Конфигурация: niche={config.get('niche')}, company_name={config.get('company_name')}")
             else:
-                # Если не удалось сохранить, пробуем загрузить еще раз
-                logger.warning(f"⚠️ [DEMO] Не удалось сохранить конфигурацию, пробую загрузить еще раз для thread_id={thread_id}")
-                config = asyncio.run(session_config_service.load_demo_config(thread_id))
-                if not config:
-                    logger.error(f"❌ [DEMO] КРИТИЧЕСКАЯ ОШИБКА: Не удалось сохранить или загрузить конфигурацию для thread_id={thread_id}")
-                    logger.error(f"❌ [DEMO] Использую базовый demo агент без конфигурации")
-                    # В случае ошибки используем базовый demo агент
-                    result = self._process_agent_result(self.demo_agent, message, history, chat_id, state, "DemoAgent")
-                    result["stage"] = "demo"  # Сохраняем стадию
-                    return result
+                logger.error(f"❌ [DEMO] Не удалось распарсить JSON из ответа demo-setup агента")
+                logger.error(f"❌ [DEMO] Использую базовый demo агент без конфигурации")
+                result = self._process_agent_result(self.demo_agent, message, history, chat_id, state, "DemoAgent")
+                result["stage"] = "demo"
+                return result
             
             # Ответ от demo-setup агента НЕ отправляется клиенту
             logger.info(f"ℹ️ [DEMO] Ответ от demo-setup агента НЕ отправляется клиенту, продолжаю с созданием demo-агента с конфигурацией")
         else:
-            logger.info(f"✅ [DEMO] Запись в базе данных НАЙДЕНА для thread_id={thread_id}")
+            logger.info(f"✅ [DEMO] Конфигурация НАЙДЕНА в состоянии для chat_id={chat_id}")
             logger.info(f"📋 [DEMO] Загруженная конфигурация: niche={config.get('niche')}, company_name={config.get('company_name')}")
         
         # Определяем язык (пока используем "ru" по умолчанию)
@@ -371,10 +362,49 @@ class MainGraph:
                 result["answer"] = prefix + answer
             logger.info(f"📤 [DEMO] Ответ demo-агента готов (длина: {len(result['answer'])} символов), добавлен префикс '[Демонстрация]'")
         
-        # Сохраняем стадию в состоянии (checkpointer автоматически сохранит)
+        # КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: Сохраняем конфигурацию в состоянии
+        # Checkpointer автоматически сохранит это в PostgreSQL
         result["stage"] = "demo"
+        result["demo_config"] = config
         
         return result
+    
+    def _parse_json_from_response(self, response_text: str) -> dict:
+        """
+        Парсит JSON из ответа LLM
+        
+        Args:
+            response_text: Текст ответа от LLM
+            
+        Returns:
+            Распарсенный JSON словарь или None
+        """
+        if not response_text or not response_text.strip():
+            return None
+        
+        response_text = response_text.strip()
+        
+        # Убираем markdown code blocks если есть
+        if response_text.startswith("```"):
+            lines = response_text.split("\n")
+            if len(lines) > 1:
+                response_text = "\n".join(lines[1:])
+            if response_text.endswith("```"):
+                response_text = response_text[:-3].strip()
+        
+        try:
+            return json.loads(response_text)
+        except json.JSONDecodeError:
+            # Пытаемся найти JSON в тексте
+            start_idx = response_text.find("{")
+            end_idx = response_text.rfind("}")
+            if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+                json_str = response_text[start_idx:end_idx + 1]
+                try:
+                    return json.loads(json_str)
+                except json.JSONDecodeError:
+                    pass
+            return None
     
     def _handle_demo_setup(self, state: ConversationState) -> ConversationState:
         """Обработка настройки демонстрации"""

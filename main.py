@@ -141,19 +141,6 @@ async def startup_event():
         import traceback
         logger.warning(f"Детали ошибки:\n{traceback.format_exc()}")
         logger.warning("⚠️ Сервисы будут инициализированы при первом запросе")
-    
-    # Инициализируем таблицу session_configs для демо-режима
-    try:
-        logger.info("🔧 Инициализация таблицы session_configs...")
-        from src.services.session_config_service import get_session_config_service
-        session_config_service = get_session_config_service()
-        await session_config_service.ensure_table_exists()
-        logger.success("✅ Таблица session_configs готова")
-    except Exception as e:
-        logger.warning(f"⚠️ Ошибка при инициализации таблицы session_configs: {str(e)}")
-        import traceback
-        logger.warning(f"Детали ошибки:\n{traceback.format_exc()}")
-        logger.warning("⚠️ Таблица будет создана при первом использовании демо-режима")
 
 @app.on_event("shutdown")
 async def shutdown_event():

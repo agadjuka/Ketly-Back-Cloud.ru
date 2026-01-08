@@ -17,4 +17,5 @@ class ConversationState(TypedDict):
     agent_name: Optional[str]                            # Имя агента, который дал ответ
     used_tools: Optional[list]                           # Список использованных инструментов
     tool_results: Optional[List[Dict[str, Any]]]          # Полная информация о результатах инструментов
+    demo_config: Optional[Dict[str, Any]]                 # Конфигурация демо-режима (niche, company_name, persona_instruction, welcome_message)
 
