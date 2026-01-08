@@ -1,13 +1,7 @@
 import os
 import sys
 
-# Настройка event loop policy для Windows (нужно для psycopg)
-# Должно быть ДО любых импортов, которые используют asyncio
-if sys.platform == 'win32':
-    import asyncio
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-
-# Ранние логи ДО любых импортов
+# Ранние логи ДО любых импортов (в stdout для Yandex Cloud)
 print("=" * 60, flush=True)
 print("🚀 НАЧАЛО ИМПОРТА МОДУЛЕЙ", flush=True)
 print("=" * 60, flush=True)
@@ -33,7 +27,7 @@ except Exception as e:
     sys.exit(1)
 
 try:
-    from service_factory import get_agent_service
+    from service_factory import get_yandex_agent_service
     print("✅ service_factory импортирован", flush=True)
 except Exception as e:
     print(f"❌ Ошибка импорта service_factory: {e}", flush=True)
@@ -142,9 +136,10 @@ async def startup_event():
     logger.info("║ 🚀 Приложение запускается...")
     logger.info("╚═══════════════════════════════════════════════════════════")
     
-    # При локальной разработке используем переменные окружения
-    # В контейнерах cloud.ru переменные передаются автоматически
-    print("✅ Конфигурация загружена", flush=True)
+    # В Yandex Cloud Serverless Containers сервисный аккаунт используется автоматически
+    # через метаданные (revision-service-account-id), файл key.json не требуется.
+    # Код для создания key.json удален - используем автоматическую аутентификацию.
+    print("✅ Используется автоматическая аутентификация через метаданные Yandex Cloud", flush=True)
     
     # Настраиваем приложение Telegram
     try:
@@ -192,10 +187,10 @@ async def startup_event():
         logger.warning("⚠️ WEBHOOK_URL не задан, webhook не установлен")
         logger.info("💡 Webhook будет установлен автоматически через GitHub Actions или вручную")
     
-    # Проверяем подключение к PostgreSQL при старте (lazy инициализация при первом запросе)
+    # Проверяем подключение к YDB при старте (lazy инициализация при первом запросе)
     try:
         logger.info("🔍 Проверка сервисов...")
-        get_agent_service()
+        get_yandex_agent_service()
         logger.success("✅ Все сервисы готовы")
     except Exception as e:
         logger.warning(f"⚠️ Предупреждение при инициализации сервисов: {str(e)}")
@@ -278,7 +273,7 @@ async def chat_endpoint(request: ChatRequest):
     Поддерживает отправку сообщений в админ-панель и проверку CallManager.
     """
     try:
-        # Логируем в stdout для гарантированной видимости
+        # Логируем в stdout для гарантированной видимости в Yandex Cloud
         print(f"📨 [CHAT] Получен POST запрос /chat", flush=True)
         logger.info("📨 [CHAT] Получен POST запрос /chat")
         
@@ -293,7 +288,7 @@ async def chat_endpoint(request: ChatRequest):
         user_id = virtual_user.id
         
         # Получаем сервисы
-        agent_service = get_agent_service()
+        yandex_agent_service = get_yandex_agent_service()
         application = get_application()
         admin_service = None
         
@@ -315,7 +310,7 @@ async def chat_endpoint(request: ChatRequest):
         # Обрабатываем сообщение через агента
         # Используем thread_id как chat_id для сохранения истории (как в Telegram используется chat_id)
         print(f"🤖 [CHAT] Отправляю сообщение агенту: thread_id={thread_id}", flush=True)
-        agent_response = await agent_service.send_to_agent(thread_id, message_text)
+        agent_response = await yandex_agent_service.send_to_agent(thread_id, message_text)
         print(f"✅ [CHAT] Получен ответ от агента", flush=True)
         
         # Извлекаем ответ

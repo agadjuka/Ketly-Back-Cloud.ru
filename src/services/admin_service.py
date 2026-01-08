@@ -1,6 +1,8 @@
 """Сервис для работы с админ-панелью на базе Telegram Forum Topics."""
 
 import logging
+import re
+from datetime import datetime
 from typing import Optional
 
 from telegram import Bot, Message, User
@@ -202,10 +204,10 @@ class AdminPanelService:
                 )
                 return
 
-            # Отправляем ответ AI в топик с пометкой "ИИ Администратор" (жирным шрифтом)
+            # Отправляем ответ AI в топик с пометкой "KETLY" (жирным шрифтом)
             await self.bot.send_message(
                 chat_id=self.admin_group_id,
-                text=f"<b>ИИ Администратор</b>\n{ai_text}",
+                text=f"<b>KETLY</b>\n{ai_text}",
                 message_thread_id=topic_id,
                 parse_mode="HTML",
             )
@@ -294,7 +296,7 @@ class AdminPanelService:
         user: User,
     ) -> None:
         """
-        Отправляет копию сообщения с информацией о пользователе.
+        Отправляет копию сообщения от пользователя в топик.
 
         Args:
             message: Сообщение для отправки
@@ -303,9 +305,12 @@ class AdminPanelService:
         """
         text = self._extract_message_text(message)
 
-        # Формируем сообщение с информацией о пользователе
-        user_info = self._format_user_info(user)
-        message_text = f"{user_info}\n\n{text}" if text else user_info
+        # Формируем максимально простой формат:
+        # 👤 Пользователь: <текст сообщения>
+        if text:
+            message_text = f"👤 Пользователь: {text}"
+        else:
+            message_text = "👤 Пользователь: (сообщение без текста)"
 
         await self.bot.send_message(
             chat_id=self.admin_group_id,
@@ -323,7 +328,18 @@ class AdminPanelService:
         Returns:
             Название топика
         """
-        # Используем полное имя, если есть, иначе username, иначе ID
+        # Проверяем, является ли это веб-пользователем (user.id - это строка UUID)
+        user_id_str = str(user.id)
+        # Проверяем, является ли ID UUID-форматом (содержит дефисы и имеет нужную длину)
+        uuid_pattern = r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+        is_web_user = bool(re.match(uuid_pattern, user_id_str, re.IGNORECASE))
+        
+        if is_web_user:
+            # Для веб-пользователей используем дату и время без секунд
+            now = datetime.now()
+            return now.strftime("%d.%m.%Y %H:%M")
+        
+        # Для Telegram-пользователей используем стандартную логику
         if user.full_name:
             return user.full_name
         elif user.username:

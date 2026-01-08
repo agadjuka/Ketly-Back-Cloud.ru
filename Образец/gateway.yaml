@@ -1,0 +1,33 @@
+openapi: 3.0.0
+info:
+  title: looktown_bot Gateway
+  version: 1.0.0
+servers:
+- url: https://d5dkp7pt729faut7krnj.ql6wied2.apigw.yandexcloud.net
+paths:
+  /{proxy+}:
+    parameters:
+      - name: proxy
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      summary: Proxy all POST requests to container
+      x-yc-apigateway-integration:
+        type: http
+        url: https://bba8gegarqvrukquktud.containers.yandexcloud.net/{proxy}
+        method: post
+    get:
+      summary: Proxy all GET requests to container
+      x-yc-apigateway-integration:
+        type: http
+        url: https://bba8gegarqvrukquktud.containers.yandexcloud.net/{proxy}
+        method: get
+    options:
+      summary: Proxy all OPTIONS requests to container (for CORS)
+      x-yc-apigateway-integration:
+        type: http
+        url: https://bba8gegarqvrukquktud.containers.yandexcloud.net/{proxy}
+        method: options
+

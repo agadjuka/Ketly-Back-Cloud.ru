@@ -2,19 +2,19 @@ import re
 
 
 class LinkConverter:
-    """Сервис для преобразования ссылок в HTML-гиперссылки"""
+    """Сервис для преобразования ссылок yclients.com в HTML-гиперссылки"""
     
     @staticmethod
-    def convert_markdown_links_to_html(text: str) -> str:
+    def convert_yclients_links(text: str) -> str:
         """
-        Преобразует Markdown ссылки [текст](ссылка) в HTML-гиперссылки <a href="ссылка">текст</a>
+        Преобразует ссылки yclients.com в HTML-гиперссылки с текстом "страница мастера"
         
-        Поддерживает формат:
-        - [текст](https://example.com)
-        - [Instagram](https://www.instagram.com/...)
+        Поддерживает ссылки:
+        - В скобках: (https://n1412149.yclients.com/...)
+        - Без скобок: https://n1412149.yclients.com/...
         
         Args:
-            text: Текст с Markdown ссылками
+            text: Текст со ссылками
             
         Returns:
             Текст с преобразованными ссылками в HTML-формате
@@ -22,72 +22,42 @@ class LinkConverter:
         if not text:
             return text
         
-        # Паттерн для поиска Markdown ссылок: [текст](ссылка)
-        # Используем non-greedy match для текста в квадратных скобках
-        pattern = r'\[([^\]]+)\]\(([^\)]+)\)'
+        # Паттерн для поиска ссылок yclients.com
+        # Ищем http/https ссылки, содержащие yclients.com
+        # Может быть в скобках или без них
+        # Простой паттерн без сложного lookbehind
+        pattern = r'(\(?)(https?://[^\s\)<>]+yclients\.com[^\s\)<>]+)(\)?)'
         
-        def replace_markdown_link(match):
-            link_text = match.group(1)  # Текст ссылки из квадратных скобок
-            url = match.group(2)  # URL из круглых скобок
-            
+        def replace_link(match):
             # Проверяем, не находимся ли мы уже внутри HTML-тега <a>
             start_pos = match.start()
+            # Проверяем, есть ли перед этой позицией незакрытый тег <a href="
             text_before = text[:start_pos]
+            # Считаем открывающие и закрывающие теги <a>
             open_tags = text_before.count('<a href="')
             close_tags = text_before.count('</a>')
-            
-            # Если уже внутри HTML-ссылки, возвращаем исходный текст
+            # Если есть незакрытый тег <a>, значит мы внутри уже обработанной ссылки
             if open_tags > close_tags:
-                return match.group(0)
+                return match.group(0)  # Возвращаем исходный текст без изменений
             
-            # Создаем HTML-гиперссылку
-            return f'<a href="{url}">{link_text}</a>'
+            url = match.group(2)  # Извлекаем URL (группа 1 - открывающая скобка, группа 3 - закрывающая скобка)
+            # Создаем HTML-гиперссылку (скобки не включаем в результат)
+            return f'<a href="{url}">Страница мастера</a>'
         
-        result = re.sub(pattern, replace_markdown_link, text)
+        result = re.sub(pattern, replace_link, text)
+        
         return result
-    
-    @staticmethod
-    def convert_yclients_links(text: str) -> str:
-        """
-        ОТКЛЮЧЕНО: Преобразует ссылки yclients.com в HTML-гиперссылки с текстом "страница мастера"
-        
-        Эта функция отключена, так как теперь агент сам формирует ссылки в формате Markdown.
-        Используйте convert_markdown_links_to_html для обработки ссылок.
-        
-        Args:
-            text: Текст со ссылками
-            
-        Returns:
-            Текст без изменений (функция отключена)
-        """
-        # Функция отключена - возвращаем текст без изменений
-        return text
-
-
-def convert_markdown_links_in_text(text: str) -> str:
-    """
-    Удобная функция для преобразования Markdown ссылок в HTML-гиперссылки
-    
-    Args:
-        text: Текст с Markdown ссылками в формате [текст](ссылка)
-        
-    Returns:
-        Текст с преобразованными ссылками в HTML-формате
-    """
-    return LinkConverter.convert_markdown_links_to_html(text)
 
 
 def convert_yclients_links_in_text(text: str) -> str:
     """
-    ОТКЛЮЧЕНО: Удобная функция для преобразования ссылок yclients.com в HTML-гиперссылки
-    
-    Эта функция отключена. Используйте convert_markdown_links_in_text для обработки ссылок.
+    Удобная функция для преобразования ссылок yclients.com в HTML-гиперссылки
     
     Args:
         text: Текст со ссылками
         
     Returns:
-        Текст без изменений (функция отключена)
+        Текст с преобразованными ссылками в HTML-формате
     """
-    # Функция отключена - возвращаем текст без изменений
-    return text
+    return LinkConverter.convert_yclients_links(text)
+
