@@ -97,7 +97,7 @@ async def clear_thread_memory(thread_id: str) -> None:
     - checkpoints
     
     Args:
-        thread_id: Идентификатор треда (обычно telegram_user_id)
+        thread_id: Идентификатор треда (chat_id или UUID сессии)
         
     Raises:
         Exception: При ошибках подключения или выполнения SQL-запросов

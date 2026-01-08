@@ -32,37 +32,21 @@ class AgentService:
     async def send_to_agent_langgraph(self, chat_id: str, user_text: str) -> dict:
         """
         Отправка сообщения через LangGraph с использованием нативной памяти PostgreSQL
-        
-        Граф сам управляет историей через checkpointer, нам нужно только передать новое сообщение.
         """
-        # Получаем telegram_user_id из chat_id (они равны для личных чатов)
-        try:
-            telegram_user_id = int(chat_id)
-        except ValueError:
-            logger.error(f"Не удалось преобразовать chat_id={chat_id} в telegram_user_id")
-            telegram_user_id = 0
+        thread_id = str(chat_id)
         
-        # Используем сообщение пользователя без изменений
-        user_message_text = user_text
-        
-        logger.info(f"Обработка сообщения от chat_id={chat_id}, telegram_user_id={telegram_user_id}")
+        logger.info(f"Обработка сообщения от chat_id={chat_id}")
         
         try:
-            # Используем checkpointer для работы с нативной памятью LangGraph
             async with get_postgres_checkpointer() as checkpointer:
-                # Создаем граф с checkpointer
                 app = create_main_graph(self.langgraph_service, checkpointer=checkpointer)
+                config = {"configurable": {"thread_id": thread_id}}
                 
-                # Используем ID пользователя как thread_id для изоляции сессий
-                config = {"configurable": {"thread_id": str(telegram_user_id)}}
-                
-                # Пытаемся восстановить предыдущее состояние из checkpointer
-                # чтобы сохранить extracted_info и demo_config между вызовами
+                # Восстанавливаем предыдущее состояние из checkpointer
                 previous_extracted_info = None
                 previous_demo_config = None
                 previous_stage = None
                 try:
-                    # Получаем последнее состояние из checkpointer
                     state_snapshot = await checkpointer.aget(config)
                     if state_snapshot:
                         previous_values = state_snapshot.values if hasattr(state_snapshot, 'values') else state_snapshot.get('values', {})
@@ -75,23 +59,16 @@ class AgentService:
                 except Exception as e:
                     logger.debug(f"Не удалось восстановить состояние из checkpointer: {e}")
                 
-                # Формируем входные данные - ТОЛЬКО новое сообщение
-                # История граф подтянет сам из БД через checkpointer!
-                # extracted_info не передаем, чтобы не перезаписать восстановленное значение
-                # ВАЖНО: НЕ передаем stage, чтобы не перезаписать сохранённое значение!
+                # Формируем входные данные
                 input_data = {
-                    "messages": [HumanMessage(content=user_message_text)],
-                    "message": user_message_text,  # Для обратной совместимости с узлами
+                    "messages": [HumanMessage(content=user_text)],
+                    "message": user_text,
                     "chat_id": chat_id,
-                    # НЕ передаем stage - оно должно восстановиться из checkpointer автоматически
-                    # НЕ передаем extracted_info - оно должно восстановиться из checkpointer автоматически
-                    # Если нужно явно установить, используем previous_extracted_info
                     "answer": "",
                     "manager_alert": None
                 }
                 
-                # Если удалось восстановить данные, добавляем их в input_data
-                # Это нужно, чтобы LangGraph правильно объединил состояние
+                # Добавляем восстановленные данные
                 if previous_extracted_info is not None:
                     input_data["extracted_info"] = previous_extracted_info
                 if previous_demo_config is not None:
@@ -99,9 +76,6 @@ class AgentService:
                 if previous_stage is not None:
                     input_data["stage"] = previous_stage
                 
-                # Запускаем граф и обрабатываем поток событий
-                # Используем ainvoke для получения финального состояния
-                # (astream используется для потоковой обработки, но нам нужен финальный результат)
                 final_state = await app.ainvoke(input_data, config)
                 
                 # Извлекаем ответ из финального состояния
@@ -154,24 +128,15 @@ class AgentService:
     async def reset_context(self, chat_id: str):
         """
         Полный сброс контекста для чата через физическое удаление чекпоинтов из БД.
-        
-        Удаляет все записи чекпоинтов для пользователя из PostgreSQL,
-        что обеспечивает полную очистку памяти, как будто пользователь пишет впервые.
         """
         try:
-            # Получаем telegram_user_id из chat_id
-            try:
-                telegram_user_id = int(chat_id)
-            except ValueError:
-                logger.error(f"Не удалось преобразовать chat_id={chat_id} в telegram_user_id")
-                telegram_user_id = 0
+            thread_id = str(chat_id)
             
-            logger.info(f"Полный сброс контекста для chat_id={chat_id}, telegram_user_id={telegram_user_id}")
+            logger.info(f"Полный сброс контекста для chat_id={chat_id}")
             
-            # Физически удаляем все чекпоинты из БД для этого thread_id
-            await clear_thread_memory(str(telegram_user_id))
+            await clear_thread_memory(thread_id)
             
-            logger.info(f"Память полностью очищена для telegram_user_id={telegram_user_id}")
+            logger.info(f"Память полностью очищена для chat_id={chat_id}")
             
             # Очищаем историю результатов инструментов
             try:
