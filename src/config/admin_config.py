@@ -33,8 +33,8 @@ def get_admin_topics_table() -> str:
     Получает название таблицы для хранения топиков в БД.
     
     Returns:
-        Название таблицы (по умолчанию "adminpanel")
+        Название таблицы (по умолчанию "adminpanel_ketly")
     """
-    return os.getenv("ADMIN_TOPICS_TABLE", "adminpanel")
+    return os.getenv("ADMIN_TOPICS_TABLE", "adminpanel_ketly")
 
 
