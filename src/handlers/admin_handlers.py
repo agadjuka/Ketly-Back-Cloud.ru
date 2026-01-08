@@ -68,6 +68,17 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
             logger.warning("Не найден user_id для topic_id=%s. Сообщение не будет переслано.", topic_id)
             return
 
+        # Проверяем, является ли это веб-пользователем (UUID строка)
+        # Для веб-пользователей нельзя переслать сообщение через Telegram
+        if isinstance(user_id, str):
+            await context.bot.send_message(
+                chat_id=admin_group_id,
+                text="⚠️ Это веб-пользователь. Сообщения можно отправлять только через веб-интерфейс.",
+                message_thread_id=topic_id,
+                reply_to_message_id=message.message_id,
+            )
+            return
+
         mode = admin_service.storage.get_mode(user_id)
 
         if mode == "auto":

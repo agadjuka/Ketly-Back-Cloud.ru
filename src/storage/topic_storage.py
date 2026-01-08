@@ -33,7 +33,7 @@ class BaseTopicStorage(ABC):
         pass
 
     @abstractmethod
-    def get_user_id(self, topic_id: int) -> int | None:
+    def get_user_id(self, topic_id: int) -> Union[int, str] | None:
         """
         Получает ID пользователя по ID топика (обратная связь).
         
@@ -41,7 +41,7 @@ class BaseTopicStorage(ABC):
             topic_id: ID топика в Telegram Forum
             
         Returns:
-            ID пользователя или None, если связь не найдена
+            ID пользователя (int для Telegram, str для веб) или None, если связь не найдена
         """
         pass
 

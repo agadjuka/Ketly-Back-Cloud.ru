@@ -101,7 +101,7 @@ class PostgresTopicStorage(BaseTopicStorage):
                 row = cur.fetchone()
                 return row[0] if row else None
 
-    def get_user_id(self, topic_id: int) -> int | None:
+    def get_user_id(self, topic_id: int) -> Union[int, str] | None:
         """
         Получает ID пользователя по ID топика (обратная связь).
         
@@ -109,7 +109,7 @@ class PostgresTopicStorage(BaseTopicStorage):
             topic_id: ID топика в Telegram Forum
             
         Returns:
-            ID пользователя или None, если связь не найдена
+            ID пользователя (int для Telegram, str для веб) или None, если связь не найдена
         """
         with self._get_connection() as conn:
             with conn.cursor() as cur:
@@ -118,7 +118,11 @@ class PostgresTopicStorage(BaseTopicStorage):
                     (topic_id,)
                 )
                 row = cur.fetchone()
-                return row[0] if row else None
+                if row:
+                    user_id = row[0]
+                    # Возвращаем как есть - может быть int (Telegram) или str (UUID веб)
+                    return user_id
+                return None
 
     def set_mode(self, user_id: Union[int, str], mode: str) -> None:
         """
