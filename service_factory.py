@@ -6,7 +6,7 @@ from src.services.agent_service import AgentService
 
 
 class ServiceFactory:
-    """Фабрика для создания сервисов с правильными зависимостями"""
+    """Фабрика для создания сервисов с правильными зависимосями"""
     
     def __init__(self):
         self._debug_service = None
