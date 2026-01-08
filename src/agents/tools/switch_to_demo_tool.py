@@ -3,7 +3,6 @@
 """
 from typing import Optional, Any
 from pydantic import BaseModel, Field
-from yandex_cloud_ml_sdk._threads.thread import Thread
 
 try:
     from ...services.logger_service import logger
@@ -23,7 +22,7 @@ class SwitchToDemoTool(BaseModel):
     КРИТИЧНО: После вызова этого инструмента НЕ ПИШИ НИКАКОГО ОТВЕТА. Оставь ответ ПУСТЫМ. Демонстрация начнется автоматически.
     """
     
-    def process(self, thread: Thread) -> str:
+    def process(self, thread: Any) -> str:
         """
         Переключение режима на демонстрацию
         
