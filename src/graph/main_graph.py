@@ -275,7 +275,7 @@ class MainGraph:
         chat_id = state.get("chat_id")
         
         result = self._process_agent_result(self.admin_agent, message, history, chat_id, state, "AdminAgent")
-        
+    
         # НЕ устанавливаем stage="admin" здесь, если будет переход в demo
         # stage будет установлен в _handle_demo, если произойдёт переключение
         # Если не будет перехода в demo, то stage останется "admin" из предыдущего состояния
@@ -433,7 +433,7 @@ class MainGraph:
         chat_id = state.get("chat_id")
         
         result = self._process_agent_result(self.demo_setup_agent, message, history, chat_id, state, "DemoSetupAgent")
-        
+
         # Сохраняем стадию в состоянии (checkpointer автоматически сохранит)
         result["stage"] = "demo_setup"
         

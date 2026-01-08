@@ -61,3 +61,30 @@ def convert_yclients_links_in_text(text: str) -> str:
     """
     return LinkConverter.convert_yclients_links(text)
 
+
+def convert_markdown_links_in_text(text: str) -> str:
+    """
+    Преобразует Markdown ссылки [текст](url) в HTML-гиперссылки <a href="url">текст</a>
+    
+    Args:
+        text: Текст с Markdown ссылками
+        
+    Returns:
+        Текст с преобразованными ссылками в HTML-формате
+    """
+    if not text:
+        return text
+    
+    # Паттерн для поиска Markdown ссылок [текст](url)
+    # Поддерживает ссылки с пробелами и специальными символами в тексте
+    pattern = r'\[([^\]]+)\]\(([^\)]+)\)'
+    
+    def replace_markdown_link(match):
+        link_text = match.group(1)  # Текст ссылки
+        url = match.group(2)  # URL
+        # Создаем HTML-гиперссылку
+        return f'<a href="{url}">{link_text}</a>'
+    
+    result = re.sub(pattern, replace_markdown_link, text)
+    return result
+

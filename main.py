@@ -128,7 +128,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     return JSONResponse(
         status_code=422,
         content={"detail": exc.errors(), "body": str(await request.body())}
-    )
+)
 
 @app.on_event("startup")
 async def startup_event():
