@@ -57,13 +57,8 @@ class PostgresTopicStorage(BaseTopicStorage):
             topic_id: ID топика в Telegram Forum
             topic_name: Название топика
         """
-        # Для UUID веб-пользователей не сохраняем в PostgreSQL (колонка bigint)
-        # Админ-панель работает только для Telegram-пользователей
-        if self._is_uuid(user_id):
-            logger.debug(
-                f"Пропуск сохранения топика для веб-пользователя (UUID): user_id={user_id}"
-            )
-            return
+        # Преобразуем user_id в строку для универсального хранения (поддержка и int, и UUID)
+        user_id_str = str(user_id)
         
         with self._get_connection() as conn:
             with conn.cursor() as cur:
@@ -77,10 +72,10 @@ class PostgresTopicStorage(BaseTopicStorage):
                         topic_name = EXCLUDED.topic_name,
                         updated_at = NOW()
                     """,
-                    (user_id, topic_id, topic_name)
+                    (user_id_str, topic_id, topic_name)
                 )
                 logger.debug(
-                    f"Сохранена связь user_id={user_id} -> topic_id={topic_id} "
+                    f"Сохранена связь user_id={user_id_str} -> topic_id={topic_id} "
                     f"(name={topic_name})"
                 )
 
@@ -92,20 +87,16 @@ class PostgresTopicStorage(BaseTopicStorage):
             user_id: ID пользователя Telegram (int) или UUID строки для веб-пользователей
             
         Returns:
-            ID топика или None, если связь не найдена или это веб-пользователь
+            ID топика или None, если связь не найдена
         """
-        # Для UUID веб-пользователей возвращаем None (админ-панель только для Telegram)
-        if self._is_uuid(user_id):
-            logger.debug(
-                f"Пропуск получения топика для веб-пользователя (UUID): user_id={user_id}"
-            )
-            return None
+        # Преобразуем user_id в строку для поиска
+        user_id_str = str(user_id)
         
         with self._get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     f"SELECT topic_id FROM {self.table_name} WHERE user_id = %s",
-                    (user_id,)
+                    (user_id_str,)
                 )
                 row = cur.fetchone()
                 return row[0] if row else None
@@ -137,12 +128,8 @@ class PostgresTopicStorage(BaseTopicStorage):
             user_id: ID пользователя Telegram (int) или UUID строки для веб-пользователей
             mode: Режим работы ("auto" или "manual")
         """
-        # Для UUID веб-пользователей не сохраняем режим
-        if self._is_uuid(user_id):
-            logger.debug(
-                f"Пропуск установки режима для веб-пользователя (UUID): user_id={user_id}"
-            )
-            return
+        # Преобразуем user_id в строку
+        user_id_str = str(user_id)
         
         with self._get_connection() as conn:
             with conn.cursor() as cur:
@@ -152,9 +139,9 @@ class PostgresTopicStorage(BaseTopicStorage):
                     SET mode = %s, updated_at = NOW()
                     WHERE user_id = %s
                     """,
-                    (mode, user_id)
+                    (mode, user_id_str)
                 )
-                logger.debug(f"Установлен режим '{mode}' для user_id={user_id}")
+                logger.debug(f"Установлен режим '{mode}' для user_id={user_id_str}")
 
     def get_mode(self, user_id: Union[int, str]) -> str:
         """
@@ -164,20 +151,16 @@ class PostgresTopicStorage(BaseTopicStorage):
             user_id: ID пользователя Telegram (int) или UUID строки для веб-пользователей
             
         Returns:
-            Режим работы ("auto" или "manual"). По умолчанию "auto", если поле не установлено или это веб-пользователь.
+            Режим работы ("auto" или "manual"). По умолчанию "auto", если поле не установлено.
         """
-        # Для UUID веб-пользователей возвращаем "auto" по умолчанию
-        if self._is_uuid(user_id):
-            logger.debug(
-                f"Пропуск получения режима для веб-пользователя (UUID): user_id={user_id}"
-            )
-            return "auto"
+        # Преобразуем user_id в строку
+        user_id_str = str(user_id)
         
         with self._get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     f"SELECT mode FROM {self.table_name} WHERE user_id = %s",
-                    (user_id,)
+                    (user_id_str,)
                 )
                 row = cur.fetchone()
                 return row[0] if row else "auto"

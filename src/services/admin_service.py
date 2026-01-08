@@ -49,16 +49,6 @@ class AdminPanelService:
         """
         user_id = user.id
 
-        # Проверяем, является ли это веб-пользвателем (UUID)
-        user_id_str = str(user_id)
-        uuid_pattern = r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-        is_web_user = bool(re.match(uuid_pattern, user_id_str, re.IGNORECASE))
-        
-        if is_web_user:
-            # Для веб-пользователей админ-панель не используется
-            # Возвращаем ошибку, чтобы вызывающий код мог обработать это gracefully
-            raise RuntimeError(f"Админ-панель недоступна для веб-пользователей (UUID: {user_id})")
-
         # Проверяем, есть ли топик в хранилище
         topic_id = self.storage.get_topic_id(user_id)
         if topic_id is not None:
