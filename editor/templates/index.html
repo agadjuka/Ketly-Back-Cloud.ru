@@ -1,0 +1,735 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Редактор промптов агента</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .main-content {
+            display: flex;
+            min-height: calc(100vh - 200px);
+        }
+
+        .sidebar {
+            width: 300px;
+            background: #f8f9fa;
+            border-right: 2px solid #e9ecef;
+            padding: 20px;
+        }
+
+        .sidebar h2 {
+            font-size: 1.3em;
+            margin-bottom: 20px;
+            color: #495057;
+        }
+
+        .stage-list {
+            list-style: none;
+        }
+
+        .stage-item {
+            padding: 15px;
+            margin-bottom: 10px;
+            background: white;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
+        }
+
+        .stage-item:hover {
+            transform: translateX(5px);
+            border-color: #667eea;
+        }
+
+        .stage-item.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-color: #667eea;
+        }
+
+        .content-area {
+            flex: 1;
+            padding: 30px;
+        }
+
+        .prompt-editor {
+            display: none;
+        }
+
+        .prompt-editor.active {
+            display: block;
+        }
+
+        .prompt-editor h2 {
+            font-size: 2em;
+            margin-bottom: 20px;
+            color: #495057;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 10px;
+            font-weight: 600;
+            color: #495057;
+            font-size: 1.1em;
+        }
+
+        .form-group textarea {
+            width: 100%;
+            min-height: calc(100vh - 350px);
+            padding: 15px;
+            border: 2px solid #e9ecef;
+            border-radius: 10px;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.6;
+            resize: vertical;
+            transition: border-color 0.3s;
+        }
+
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .save-btn {
+            padding: 15px 40px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 1.1em;
+            cursor: pointer;
+            transition: transform 0.3s;
+        }
+
+        .save-btn:hover {
+            transform: scale(1.05);
+        }
+
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px 25px;
+            border-radius: 10px;
+            color: white;
+            font-weight: 600;
+            z-index: 1000;
+            display: none;
+            animation: slideIn 0.3s ease;
+        }
+
+        .notification.success {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        }
+
+        .notification.error {
+            background: linear-gradient(135deg, #eb3349 0%, #f45c43 100%);
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        .loading {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 30px;
+            border-radius: 20px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+            z-index: 3000;
+        }
+
+        .loading.active {
+            display: block;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Стили для инструментов */
+        .tool-card {
+            background: #f8f9fa;
+            border: 2px solid #e9ecef;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .tool-card h3 {
+            color: #495057;
+            margin-bottom: 10px;
+            font-size: 1.5em;
+        }
+
+        .tool-description {
+            color: #666;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: white;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+
+        .tool-param {
+            margin-bottom: 15px;
+        }
+
+        .tool-param label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #495057;
+        }
+
+        .tool-param input,
+        .tool-param select {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            font-size: 1em;
+        }
+
+        .tool-param input:focus,
+        .tool-param select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .param-description {
+            font-size: 0.9em;
+            color: #666;
+            margin-top: 5px;
+            font-style: italic;
+        }
+
+        .tool-result {
+            margin-top: 20px;
+            padding: 15px;
+            background: white;
+            border-radius: 8px;
+            border: 2px solid #e9ecef;
+            display: none;
+        }
+
+        .tool-result.active {
+            display: block;
+        }
+
+        .tool-result.success {
+            border-left: 4px solid #38ef7d;
+        }
+
+        .tool-result.error {
+            border-left: 4px solid #f45c43;
+        }
+
+        .tool-result h4 {
+            margin-bottom: 10px;
+            color: #495057;
+        }
+
+        .tool-result pre {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 5px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .run-tool-btn {
+            padding: 12px 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1em;
+            cursor: pointer;
+            transition: transform 0.3s;
+            margin-top: 10px;
+        }
+
+        .run-tool-btn:hover {
+            transform: scale(1.05);
+        }
+
+        .run-tool-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤖 Редактор промптов агента</h1>
+            <p>Редактирование промптов и тестирование инструментов</p>
+        </div>
+
+        <div class="main-content">
+            <div class="sidebar">
+                <h2>Промпты</h2>
+                <ul class="stage-list">
+                    <li class="stage-item" data-stage="router" onclick="switchEditor('router')">
+                        <span>Промпт роутера</span>
+                    </li>
+                </ul>
+
+                <h2 style="margin-top: 30px;">Стадии</h2>
+                <ul class="stage-list" id="stages-list">
+                    <!-- Стадии будут загружены динамически -->
+                </ul>
+
+                <h2 style="margin-top: 30px;">Инструменты</h2>
+                <ul class="stage-list">
+                    <li class="stage-item" data-stage="tools" onclick="switchEditor('tools')">
+                        <span>🔧 Тестирование инструментов</span>
+                    </li>
+                </ul>
+            </div>
+
+            <div class="content-area">
+                <!-- Промпт роутера -->
+                <div class="prompt-editor active" data-editor="router">
+                    <h2>Промпт роутера</h2>
+                    <div class="form-group">
+                        <label>Промпт:</label>
+                        <textarea id="router-prompt"></textarea>
+                    </div>
+                    <button class="save-btn" onclick="savePrompt('router')">Сохранить</button>
+                </div>
+
+                <!-- Редакторы стадий будут добавлены динамически -->
+                <div id="stage-editors"></div>
+
+                <!-- Вкладка инструментов -->
+                <div class="prompt-editor" data-editor="tools">
+                    <h2>🔧 Тестирование инструментов</h2>
+                    <div id="tools-container">
+                        <p style="color: #666; margin-bottom: 20px;">Загрузка инструментов...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Уведомления -->
+    <div class="notification" id="notification"></div>
+
+    <!-- Загрузка -->
+    <div class="loading" id="loading">
+        <div class="spinner"></div>
+        <p style="margin-top: 15px; text-align: center; color: #495057;">Загрузка...</p>
+    </div>
+
+    <script>
+        let promptsData = {};
+
+        // Загрузка данных при старте
+        async function loadData() {
+            showLoading();
+            try {
+                const response = await fetch('/api/prompts');
+                promptsData = await response.json();
+                
+                // Заполняем промпт роутера
+                document.getElementById('router-prompt').value = promptsData.router_prompt || '';
+                
+                // Заполняем стадии
+                renderStages();
+                hideLoading();
+            } catch (error) {
+                showNotification('Ошибка загрузки данных: ' + error.message, 'error');
+                hideLoading();
+            }
+        }
+
+        // Отрисовка стадий
+        function renderStages() {
+            const stagesList = document.getElementById('stages-list');
+            const stageEditors = document.getElementById('stage-editors');
+            
+            stagesList.innerHTML = '';
+            stageEditors.innerHTML = '';
+            
+            promptsData.stages.forEach(stage => {
+                // Добавляем в список
+                const li = document.createElement('li');
+                li.className = 'stage-item';
+                li.setAttribute('data-stage', stage.key);
+                li.innerHTML = `<span>${stage.name}</span>`;
+                li.onclick = () => switchEditor(stage.key);
+                stagesList.appendChild(li);
+                
+                // Добавляем редактор
+                const editor = document.createElement('div');
+                editor.className = 'prompt-editor';
+                editor.setAttribute('data-editor', stage.key);
+                editor.innerHTML = `
+                    <h2>${stage.name}</h2>
+                    <div class="form-group">
+                        <label>Промпт стадии:</label>
+                        <textarea id="${stage.key}-prompt">${stage.prompt || ''}</textarea>
+                    </div>
+                    <button class="save-btn" onclick="saveStagePrompt('${stage.key}')">Сохранить промпт</button>
+                `;
+                stageEditors.appendChild(editor);
+            });
+        }
+
+        // Переключение редактора
+        function switchEditor(editorName) {
+            // Убираем active со всех элементов
+            document.querySelectorAll('.stage-item').forEach(item => item.classList.remove('active'));
+            document.querySelectorAll('.prompt-editor').forEach(editor => editor.classList.remove('active'));
+            
+            // Добавляем active к выбранным
+            const stageItem = document.querySelector(`[data-stage="${editorName}"]`);
+            const editor = document.querySelector(`[data-editor="${editorName}"]`);
+            
+            if (stageItem) stageItem.classList.add('active');
+            if (editor) editor.classList.add('active');
+            
+            // Загружаем инструменты если переключились на вкладку инструментов
+            if (editorName === 'tools') {
+                loadTools();
+            }
+        }
+
+        // Сохранение промпта роутера
+        async function savePrompt(type) {
+            showLoading();
+            const textareaId = `${type}-prompt`;
+            const prompt = document.getElementById(textareaId).value;
+            
+            try {
+                const response = await fetch(`/api/prompts/${type}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ prompt }),
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    showNotification('Промпт успешно сохранен!', 'success');
+                } else {
+                    showNotification('Ошибка: ' + result.error, 'error');
+                }
+                hideLoading();
+            } catch (error) {
+                showNotification('Ошибка сохранения: ' + error.message, 'error');
+                hideLoading();
+            }
+        }
+
+        // Сохранение промпта стадии
+        async function saveStagePrompt(stageKey) {
+            showLoading();
+            const prompt = document.getElementById(`${stageKey}-prompt`).value;
+            
+            try {
+                const response = await fetch(`/api/stages/${stageKey}/prompt`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ prompt }),
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    showNotification('Промпт стадии успешно сохранен!', 'success');
+                } else {
+                    showNotification('Ошибка: ' + result.error, 'error');
+                }
+                hideLoading();
+            } catch (error) {
+                showNotification('Ошибка сохранения: ' + error.message, 'error');
+                hideLoading();
+            }
+        }
+
+        // Показать уведомление
+        function showNotification(message, type) {
+            const notification = document.getElementById('notification');
+            notification.textContent = message;
+            notification.className = `notification ${type}`;
+            notification.style.display = 'block';
+            
+            setTimeout(() => {
+                notification.style.display = 'none';
+            }, 3000);
+        }
+
+        // Показать загрузку
+        function showLoading() {
+            document.getElementById('loading').classList.add('active');
+        }
+
+        // Скрыть загрузку
+        function hideLoading() {
+            document.getElementById('loading').classList.remove('active');
+        }
+
+        // Загружаем данные при загрузке страницы
+        loadData();
+
+        // Загрузка инструментов
+        let toolsData = [];
+
+        async function loadTools() {
+            try {
+                const response = await fetch('/api/tools');
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                toolsData = data.tools || [];
+                
+                renderTools();
+            } catch (error) {
+                console.error('[ERROR] Ошибка загрузки инструментов:', error);
+                const container = document.getElementById('tools-container');
+                if (container) {
+                    container.innerHTML = 
+                        '<p style="color: red; padding: 20px; background: #ffe6e6; border-radius: 8px;">' +
+                        '<strong>Ошибка загрузки инструментов:</strong><br>' + 
+                        error.message + 
+                        '</p>';
+                }
+            }
+        }
+
+        function renderTools() {
+            const container = document.getElementById('tools-container');
+            
+            if (toolsData.length === 0) {
+                container.innerHTML = '<p style="color: #666;">Инструменты не найдены</p>';
+                return;
+            }
+
+            container.innerHTML = toolsData.map(tool => {
+                const paramsHtml = tool.parameters.map(param => {
+                    const inputType = param.type === 'number' ? 'number' : 
+                                     param.type === 'boolean' ? 'checkbox' : 'text';
+                    
+                    let inputHtml = '';
+                    if (param.type === 'boolean') {
+                        inputHtml = `<input type="checkbox" id="${tool.name}-${param.name}" ${param.default ? 'checked' : ''}>`;
+                    } else if (param.enum) {
+                        inputHtml = `<select id="${tool.name}-${param.name}" ${param.required ? 'required' : ''}>
+                            ${param.default === undefined ? '<option value="">Выберите значение</option>' : ''}
+                            ${param.enum.map(val => `<option value="${val}" ${val === param.default ? 'selected' : ''}>${val}</option>`).join('')}
+                        </select>`;
+                    } else {
+                        const defaultValue = param.default !== undefined && param.default !== null ? param.default : '';
+                        inputHtml = `<input type="${inputType}" id="${tool.name}-${param.name}" 
+                            value="${defaultValue}" 
+                            ${param.required ? 'required' : ''}
+                            placeholder="${param.description || ''}">`;
+                    }
+
+                    return `
+                        <div class="tool-param">
+                            <label for="${tool.name}-${param.name}">
+                                ${param.name} ${param.required ? '<span style="color: red;">*</span>' : ''}
+                            </label>
+                            ${inputHtml}
+                            ${param.description ? `<div class="param-description">${param.description}</div>` : ''}
+                        </div>
+                    `;
+                }).join('');
+
+                return `
+                    <div class="tool-card">
+                        <h3>${tool.name}</h3>
+                        <div class="tool-description">${tool.description || 'Описание отсутствует'}</div>
+                        ${paramsHtml}
+                        <button class="run-tool-btn" onclick="executeTool('${tool.name}')">▶ Запуск</button>
+                        <div class="tool-result" id="${tool.name}-result"></div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function executeTool(toolName) {
+            const tool = toolsData.find(t => t.name === toolName);
+            if (!tool) return;
+
+            const resultDiv = document.getElementById(`${toolName}-result`);
+            const btn = event.target;
+            
+            // Собираем аргументы
+            const args = {};
+            let hasErrors = false;
+
+            tool.parameters.forEach(param => {
+                const input = document.getElementById(`${toolName}-${param.name}`);
+                if (!input) return;
+
+                let value = null;
+                if (param.type === 'boolean') {
+                    value = input.checked;
+                } else if (param.type === 'number') {
+                    const inputValue = input.value.trim();
+                    if (inputValue === '' || inputValue === 'null' || inputValue === 'undefined') {
+                        value = null;
+                    } else {
+                        const parsed = parseFloat(inputValue);
+                        value = isNaN(parsed) ? null : parsed;
+                    }
+                } else {
+                    const inputValue = input.value.trim();
+                    if (inputValue === '' || inputValue === 'null' || inputValue === 'undefined') {
+                        value = null;
+                    } else {
+                        value = inputValue;
+                    }
+                }
+
+                if (param.required && (value === null || value === '')) {
+                    input.style.borderColor = 'red';
+                    hasErrors = true;
+                    return;
+                } else {
+                    input.style.borderColor = '#e9ecef';
+                }
+
+                if (value !== null && value !== '') {
+                    args[param.name] = value;
+                } else if (param.required) {
+                    args[param.name] = value;
+                }
+            });
+
+            if (hasErrors) {
+                resultDiv.className = 'tool-result active error';
+                resultDiv.innerHTML = '<h4>Ошибка</h4><p>Заполните все обязательные поля</p>';
+                return;
+            }
+
+            // Блокируем кнопку
+            btn.disabled = true;
+            btn.textContent = '⏳ Выполняется...';
+            resultDiv.className = 'tool-result active';
+            resultDiv.innerHTML = '<h4>Выполнение...</h4><p>Ожидайте результат</p>';
+
+            try {
+                const response = await fetch(`/api/tools/${toolName}/execute`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ args }),
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    resultDiv.className = 'tool-result active success';
+                    resultDiv.innerHTML = `
+                        <h4>✅ Результат:</h4>
+                        <pre>${result.result || 'Инструмент выполнен успешно'}</pre>
+                    `;
+                } else {
+                    resultDiv.className = 'tool-result active error';
+                    resultDiv.innerHTML = `
+                        <h4>❌ Ошибка:</h4>
+                        <pre>${result.error || 'Неизвестная ошибка'}</pre>
+                    `;
+                }
+            } catch (error) {
+                resultDiv.className = 'tool-result active error';
+                resultDiv.innerHTML = `
+                    <h4>❌ Ошибка:</h4>
+                    <pre>${error.message}</pre>
+                `;
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '▶ Запуск';
+            }
+        }
+    </script>
+</body>
+</html>

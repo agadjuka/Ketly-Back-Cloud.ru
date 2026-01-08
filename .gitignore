@@ -1,0 +1,88 @@
+# Environment variables
+.env
+*.env
+*копия.env
+* — копия.env
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Virtual environment
+venv/
+env/
+ENV/
+.venv/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-*
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+logs/
+
+# Keys and secrets
+key.json
+*.key
+*.pem
+
+# Dialogue patterns
+dialogue_patterns.json
+
+# Additional ignores
+# Logs and debug artifacts
+debug_logs/
+
+# Deployment sample (do not commit)
+Образец для деплоя/
+*образец*
+
+# Docker artifacts
+*.tar
+*.dockerignore.bak
+
+# Keys and secrets in JSON
+*key*.json
+*keys*.json
+secrets*.json
+
+# Dialogue patterns variants and backups
+DialogPatterns*
+*DialogPatterns*
+dialogue_patterns.json.bak
+dialogue_patterns — копия.json
+* — копия.json
+*.bak
+
+# Prompt files
+FilePrompt*
+Промпт.txt
+
+# Test files
+test_*.py
+*_test.py
+tests/
+
+# Utility scripts (not needed in production)
+verify_services.py
+
+# YC Wine Assistant (reference implementation)
+YC Wine Assistant/
+
