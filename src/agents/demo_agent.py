@@ -87,3 +87,4 @@ class DemoAgent(BaseAgent):
             agent_name="Демонстрационный агент"
         )
 
+

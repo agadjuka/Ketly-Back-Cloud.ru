@@ -46,3 +46,4 @@ class DemoSetupAgent(BaseAgent):
             agent_name="Агент настройки демонстрации"
         )
 
+
