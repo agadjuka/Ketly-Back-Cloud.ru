@@ -223,6 +223,7 @@ class MainGraph:
         
         # Определяем, в какую историю сохранять сообщения
         # demo_setup сохраняет в общую историю messages, остальные - в изолированные
+        # User сообщение уже добавлено в изолированную историю в _handle_admin/_handle_demo
         update_dict = {}
         if agent_name == "DemoSetupAgent":
             # demo_setup использует общую историю
@@ -273,6 +274,30 @@ class MainGraph:
         
         # Получаем изолированную историю для admin агента
         admin_messages = state.get("admin_messages", [])
+        general_messages = state.get("messages", [])
+        
+        # КРИТИЧНО: User сообщения общие для всех агентов, их нужно копировать из общей истории
+        # Собираем все user сообщения из общей истории в правильном порядке
+        user_messages_from_general = []
+        user_contents_seen = set()
+        for msg in general_messages:
+            msg_type = getattr(msg, 'type', None) if hasattr(msg, 'type') else None
+            if msg_type == 'human':
+                content = getattr(msg, 'content', '')
+                if content and content not in user_contents_seen:
+                    user_messages_from_general.append(msg)
+                    user_contents_seen.add(content)
+        
+        # Собираем ответы admin агента из admin_messages (все кроме user сообщений)
+        admin_responses = []
+        for msg in admin_messages:
+            msg_type = getattr(msg, 'type', None) if hasattr(msg, 'type') else None
+            if msg_type != 'human':
+                admin_responses.append(msg)
+        
+        # Объединяем: сначала все user сообщения из общей истории, потом ответы admin агента
+        admin_messages = user_messages_from_general + admin_responses
+        state = {**state, "admin_messages": admin_messages}
         
         # Если сообщение - это "стоп" и мы только что переключились с demo, добавляем системное сообщение в историю ПЕРЕД вызовом агента
         # Проверяем, что предыдущая стадия была demo (можно проверить по наличию demo_config)
@@ -318,6 +343,27 @@ class MainGraph:
         
         logger.info(f"🎯 [DEMO] Обработка демо-режима. chat_id={chat_id}, message={message[:100]}")
         
+        # КРИТИЧНО: User сообщение добавляется в общую историю messages, но не в demo_messages
+        # Нужно добавить его в demo_messages из общей истории messages
+        demo_messages = state.get("demo_messages", [])
+        general_messages = state.get("messages", [])
+        
+        # Находим последнее user сообщение в общей истории (это текущее сообщение)
+        if general_messages:
+            last_message = general_messages[-1]
+            if hasattr(last_message, 'type') and last_message.type == 'human':
+                # Проверяем, нет ли уже этого сообщения в demo_messages
+                message_exists = False
+                if demo_messages:
+                    last_demo = demo_messages[-1]
+                    if hasattr(last_demo, 'content') and last_demo.content == message and hasattr(last_demo, 'type') and last_demo.type == 'human':
+                        message_exists = True
+                
+                if not message_exists:
+                    # Добавляем user сообщение в demo_messages
+                    demo_messages = list(demo_messages) + [last_message]
+                    state = {**state, "demo_messages": demo_messages}
+        
         # КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: Получаем конфигурацию из состояния
         config = state.get("demo_config")
         
@@ -350,9 +396,7 @@ class MainGraph:
                 if missing_fields:
                     logger.error(f"❌ [DEMO] Отсутствуют обязательные поля в конфигурации: {missing_fields}")
                     logger.error(f"❌ [DEMO] Использую базовый demo агент без конфигурации")
-                    # Используем изолированную историю для demo агента
-                    # Orchestrator сам добавит текущее сообщение пользователя, если его там нет
-                    demo_messages = state.get("demo_messages", [])
+                    # Используем изолированную историю для demo агента (уже получена выше)
                     demo_history = messages_to_history(demo_messages) if demo_messages else None
                     result = self._process_agent_result(self.demo_agent, message, demo_history, chat_id, state, "DemoAgent")
                     result["stage"] = "demo"
@@ -363,9 +407,7 @@ class MainGraph:
             else:
                 logger.error(f"❌ [DEMO] Не удалось распарсить JSON из ответа demo-setup агента")
                 logger.error(f"❌ [DEMO] Использую базовый demo агент без конфигурации")
-                # Используем изолированную историю для demo агента
-                # Orchestrator сам добавит текущее сообщение пользователя, если его там нет
-                demo_messages = state.get("demo_messages", [])
+                # Используем изолированную историю для demo агента (уже получена выше)
                 demo_history = messages_to_history(demo_messages) if demo_messages else None
                 result = self._process_agent_result(self.demo_agent, message, demo_history, chat_id, state, "DemoAgent")
                 result["stage"] = "demo"
