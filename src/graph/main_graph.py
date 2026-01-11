@@ -5,7 +5,7 @@ import json
 from typing import Literal
 from langgraph.graph import StateGraph, START, END
 from .conversation_state import ConversationState
-from .utils import messages_to_history, filter_history_for_stage_detector
+from .utils import messages_to_history, filter_history_for_stage_detector, get_agent_history
 from ..agents.stage_detector_agent import StageDetectorAgent
 from ..agents.admin_agent import AdminAgent
 from ..agents.demo_agent import DemoAgent, create_demo_actor_agent_with_config
@@ -143,19 +143,11 @@ class MainGraph:
             logger.info(f"🛑 Обнаружена команда 'стоп' для chat_id={chat_id} в demo режиме")
             logger.info(f"Переключение с demo на admin для chat_id={chat_id}")
             
-            from langchain_core.messages import AIMessage
-            
-            # КРИТИЧНО: Создаём AIMessage с ответом
-            # Это сообщение ДОЛЖНО быть добавлено в messages для сохранения в истории
-            answer_text = "Понравилась ли вам демонстрация? Если хотите, могу связать Вас с нашим менеджером для обсуждения сотрудничества."
-            ai_message = AIMessage(content=answer_text)
-            
-            # Обновляем стадию на admin в состоянии
+            # Просто переключаем стадию на admin, граф продолжит работу и вызовет admin агента
+            # Системное сообщение будет добавлено в _handle_admin после сообщения пользователя
             # Checkpointer автоматически сохранит это в PostgreSQL
             return {
                 "stage": "admin",
-                "answer": answer_text,
-                "messages": [ai_message],  # КРИТИЧНО: Добавляем AIMessage в messages
             }
         
         if current_stage:
@@ -171,11 +163,6 @@ class MainGraph:
         "admin", "demo", "demo_setup", "end"
     ]:
         """Маршрутизация после определения стадии"""
-        # Если есть answer (например, после команды "стоп"), завершаем граф
-        if state.get("answer"):
-            logger.info("Answer уже установлен в detect_stage, завершаем граф")
-            return "end"
-        
         # Маршрутизируем по стадии
         stage = state.get("stage", "admin")
         logger.info(f"🔀 Маршрутизация на стадию: {stage}")
@@ -234,6 +221,19 @@ class MainGraph:
         tool_results = result.get("tool_calls", [])
         used_tools = [tool.get("name") for tool in tool_results] if tool_results else []
         
+        # Определяем, в какую историю сохранять сообщения
+        # demo_setup сохраняет в общую историю messages, остальные - в изолированные
+        update_dict = {}
+        if agent_name == "DemoSetupAgent":
+            # demo_setup использует общую историю
+            update_dict["messages"] = new_messages
+        elif agent_name == "AdminAgent":
+            # admin использует изолированную историю
+            update_dict["admin_messages"] = new_messages
+        elif agent_name == "DemoAgent":
+            # demo использует изолированную историю
+            update_dict["demo_messages"] = new_messages
+        
         # Проверяем, был ли вызван CallManager через инструмент
         if result.get("call_manager"):
             escalation_result = agent._call_manager_result if hasattr(agent, '_call_manager_result') and agent._call_manager_result else {}
@@ -244,7 +244,7 @@ class MainGraph:
             # КРИТИЧНО: Сохраняем все существующие поля из state
             return {
                 **state,  # Сохраняем все существующие поля
-                "messages": new_messages,
+                **update_dict,  # Обновляем правильную историю
                 "answer": escalation_result.get("user_message", result.get("reply", "")),
                 "manager_alert": escalation_result.get("manager_alert", result.get("manager_alert")),
                 "agent_name": agent_name,
@@ -258,7 +258,7 @@ class MainGraph:
         # КРИТИЧНО: Сохраняем все существующие поля из state, чтобы не потерять demo_config, extracted_info и т.д.
         return {
             **state,  # Сохраняем все существующие поля
-            "messages": new_messages,
+            **update_dict,  # Обновляем правильную историю
             "answer": answer,
             "agent_name": agent_name,
             "used_tools": used_tools,
@@ -269,12 +269,32 @@ class MainGraph:
         """Обработка административных функций"""
         logger.info("🔧 Обработка административных функций")
         message = state["message"]
-        # Преобразуем messages в history для обратной совместимости с агентами
-        messages = state.get("messages", [])
-        history = messages_to_history(messages) if messages else None
         chat_id = state.get("chat_id")
         
+        # Получаем изолированную историю для admin агента
+        admin_messages = state.get("admin_messages", [])
+        
+        # Преобразуем в history для обратной совместимости с агентами
+        # Orchestrator сам добавит сообщение пользователя, если его там нет
+        history = messages_to_history(admin_messages) if admin_messages else None
+        
         result = self._process_agent_result(self.admin_agent, message, history, chat_id, state, "AdminAgent")
+        
+        # Если сообщение - это "стоп" и мы только что переключились с demo, добавляем системное сообщение В КОНЕЦ
+        # Проверяем, что предыдущая стадия была demo (можно проверить по наличию demo_config)
+        if message.strip().lower() == "стоп" and state.get("demo_config"):
+            logger.info(f"📝 Добавляю системное сообщение о завершении демонстрации в конец истории admin агента")
+            from langchain_core.messages import SystemMessage
+            
+            # Получаем обновленную историю из результата (там уже есть сообщение "стоп" от orchestrator)
+            updated_admin_messages = result.get("admin_messages", admin_messages)
+            
+            # Добавляем системное сообщение В САМЫЙ КОНЕЦ истории
+            system_message = SystemMessage(content="Демонстрация проведена. Клиент завершил демонстрацию командой 'стоп'.")
+            updated_admin_messages = list(updated_admin_messages) + [system_message]
+            
+            # Обновляем результат с новой историей
+            result["admin_messages"] = updated_admin_messages
     
         # НЕ устанавливаем stage="admin" здесь, если будет переход в demo
         # stage будет установлен в _handle_demo, если произойдёт переключение
@@ -296,8 +316,6 @@ class MainGraph:
         5. Создает demo-агента с заполненным промптом на основе конфигурации
         """
         message = state["message"]
-        messages = state.get("messages", [])
-        history = messages_to_history(messages) if messages else None
         chat_id = state.get("chat_id")
         
         logger.info(f"🎯 [DEMO] Обработка демо-режима. chat_id={chat_id}, message={message[:100]}")
@@ -310,8 +328,12 @@ class MainGraph:
             logger.info(f"❌ [DEMO] Конфигурация НЕ найдена в состоянии для chat_id={chat_id}")
             logger.info(f"📞 [DEMO] Обращаемся к demo-setup агенту для получения конфигурации")
             
+            # demo_setup получает ВСЮ общую историю (messages)
+            setup_messages = state.get("messages", [])
+            setup_history = messages_to_history(setup_messages) if setup_messages else None
+            
             # Вызываем demo-setup агента
-            setup_result = self.demo_setup_agent.run(message, history, chat_id=chat_id)
+            setup_result = self.demo_setup_agent.run(message, setup_history, chat_id=chat_id)
             
             # Извлекаем ответ от demo-setup агента
             setup_answer = setup_result.get("reply", "")
@@ -330,7 +352,11 @@ class MainGraph:
                 if missing_fields:
                     logger.error(f"❌ [DEMO] Отсутствуют обязательные поля в конфигурации: {missing_fields}")
                     logger.error(f"❌ [DEMO] Использую базовый demo агент без конфигурации")
-                    result = self._process_agent_result(self.demo_agent, message, history, chat_id, state, "DemoAgent")
+                    # Используем изолированную историю для demo агента
+                    # Orchestrator сам добавит текущее сообщение пользователя, если его там нет
+                    demo_messages = state.get("demo_messages", [])
+                    demo_history = messages_to_history(demo_messages) if demo_messages else None
+                    result = self._process_agent_result(self.demo_agent, message, demo_history, chat_id, state, "DemoAgent")
                     result["stage"] = "demo"
                     return result
                 
@@ -339,7 +365,11 @@ class MainGraph:
             else:
                 logger.error(f"❌ [DEMO] Не удалось распарсить JSON из ответа demo-setup агента")
                 logger.error(f"❌ [DEMO] Использую базовый demo агент без конфигурации")
-                result = self._process_agent_result(self.demo_agent, message, history, chat_id, state, "DemoAgent")
+                # Используем изолированную историю для demo агента
+                # Orchestrator сам добавит текущее сообщение пользователя, если его там нет
+                demo_messages = state.get("demo_messages", [])
+                demo_history = messages_to_history(demo_messages) if demo_messages else None
+                result = self._process_agent_result(self.demo_agent, message, demo_history, chat_id, state, "DemoAgent")
                 result["stage"] = "demo"
                 return result
             
@@ -363,8 +393,13 @@ class MainGraph:
         
         logger.info(f"💬 [DEMO] Вызываю demo-агента с сообщением пользователя")
         
+        # Используем изолированную историю для demo агента
+        # Orchestrator сам добавит текущее сообщение пользователя, если его там нет
+        demo_messages = state.get("demo_messages", [])
+        demo_history = messages_to_history(demo_messages) if demo_messages else None
+        
         # Вызываем demo-агента с сообщениями пользователя
-        result = self._process_agent_result(demo_agent_with_config, message, history, chat_id, state, "DemoAgent")
+        result = self._process_agent_result(demo_agent_with_config, message, demo_history, chat_id, state, "DemoAgent")
         
         # Добавляем префикс "[Демонстрация] " к ответу
         if result.get("answer"):
@@ -428,6 +463,7 @@ class MainGraph:
         """Обработка настройки демонстрации"""
         logger.info("🔧 Обработка настройки демонстрации")
         message = state["message"]
+        # demo_setup получает ВСЮ общую историю (messages)
         messages = state.get("messages", [])
         history = messages_to_history(messages) if messages else None
         chat_id = state.get("chat_id")

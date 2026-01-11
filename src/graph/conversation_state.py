@@ -18,4 +18,8 @@ class ConversationState(TypedDict):
     used_tools: Optional[list]                           # Список использованных инструментов
     tool_results: Optional[List[Dict[str, Any]]]          # Полная информация о результатах инструментов
     demo_config: Optional[Dict[str, Any]]                 # Конфигурация демо-режима (niche, company_name, persona_instruction, welcome_message)
+    # Изолированные истории для каждого агента
+    admin_messages: Annotated[list[AnyMessage], add_messages]  # История для admin агента
+    demo_messages: Annotated[list[AnyMessage], add_messages]   # История для demo агента
+    demo_setup_messages: Annotated[list[AnyMessage], add_messages]  # История для demo_setup агента
 
