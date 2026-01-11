@@ -222,15 +222,12 @@ class MainGraph:
         used_tools = [tool.get("name") for tool in tool_results] if tool_results else []
         
         # Определяем, в какую историю сохранять сообщения
-        # demo_setup сохраняет в общую историю messages, остальные - в изолированные
-        # User сообщение уже добавлено в изолированную историю в _handle_admin/_handle_demo
+        # admin и demo_setup используют общую историю messages
+        # demo использует изолированную историю demo_messages
         update_dict = {}
-        if agent_name == "DemoSetupAgent":
-            # demo_setup использует общую историю
+        if agent_name == "DemoSetupAgent" or agent_name == "AdminAgent":
+            # admin и demo_setup используют общую историю
             update_dict["messages"] = new_messages
-        elif agent_name == "AdminAgent":
-            # admin использует изолированную историю
-            update_dict["admin_messages"] = new_messages
         elif agent_name == "DemoAgent":
             # demo использует изолированную историю
             update_dict["demo_messages"] = new_messages
@@ -272,56 +269,20 @@ class MainGraph:
         message = state["message"]
         chat_id = state.get("chat_id")
         
-        # Получаем изолированную историю для admin агента
-        admin_messages = state.get("admin_messages", [])
-        general_messages = state.get("messages", [])
+        # Используем общую историю для admin агента (admin и demo_setup используют общую историю)
+        messages = state.get("messages", [])
+        history = messages_to_history(messages) if messages else None
         
-        # КРИТИЧНО: User сообщения общие для всех агентов, их нужно копировать из общей истории
-        # Собираем все user сообщения из общей истории в правильном порядке
-        user_messages_from_general = []
-        user_contents_seen = set()
-        for msg in general_messages:
-            msg_type = getattr(msg, 'type', None) if hasattr(msg, 'type') else None
-            if msg_type == 'human':
-                content = getattr(msg, 'content', '')
-                if content and content not in user_contents_seen:
-                    user_messages_from_general.append(msg)
-                    user_contents_seen.add(content)
-        
-        # Собираем ответы admin агента из admin_messages (все кроме user сообщений)
-        admin_responses = []
-        for msg in admin_messages:
-            msg_type = getattr(msg, 'type', None) if hasattr(msg, 'type') else None
-            if msg_type != 'human':
-                admin_responses.append(msg)
-        
-        # Объединяем: сначала все user сообщения из общей истории, потом ответы admin агента
-        admin_messages = user_messages_from_general + admin_responses
-        state = {**state, "admin_messages": admin_messages}
-        
-        # Если сообщение - это "стоп" и мы только что переключились с demo, добавляем системное сообщение в историю ПЕРЕД вызовом агента
-        # Проверяем, что предыдущая стадия была demo (можно проверить по наличию demo_config)
+        # Если сообщение - это "стоп" и мы только что переключились с demo, добавляем системное сообщение
         if message.strip().lower() == "стоп" and state.get("demo_config"):
-            logger.info(f"📝 Добавляю системное сообщение о завершении демонстрации в историю admin агента ПЕРЕД вызовом")
+            logger.info(f"📝 Добавляю системное сообщение о завершении демонстрации")
             from langchain_core.messages import SystemMessage
-            
-            # Добавляем системное сообщение в конец истории
-            # Orchestrator добавит "стоп" после системного сообщения, но это нормально - агент увидит оба
             system_message = SystemMessage(content="Демонстрация проведена. Клиент завершил демонстрацию командой 'стоп'.")
-            admin_messages = list(admin_messages) + [system_message]
-            
-            # Обновляем состояние с новой историей
-            state = {**state, "admin_messages": admin_messages}
-        
-        # Преобразуем в history для обратной совместимости с агентами
-        # Orchestrator сам добавит сообщение пользователя автоматически
-        history = messages_to_history(admin_messages) if admin_messages else None
+            messages = list(messages) + [system_message]
+            state = {**state, "messages": messages}
+            history = messages_to_history(messages) if messages else None
         
         result = self._process_agent_result(self.admin_agent, message, history, chat_id, state, "AdminAgent")
-    
-        # НЕ устанавливаем stage="admin" здесь, если будет переход в demo
-        # stage будет установлен в _handle_demo, если произойдёт переключение
-        # Если не будет перехода в demo, то stage останется "admin" из предыдущего состояния
         
         return result
     
@@ -343,26 +304,8 @@ class MainGraph:
         
         logger.info(f"🎯 [DEMO] Обработка демо-режима. chat_id={chat_id}, message={message[:100]}")
         
-        # КРИТИЧНО: User сообщение добавляется в общую историю messages, но не в demo_messages
-        # Нужно добавить его в demo_messages из общей истории messages
+        # Используем изолированную историю для demo агента
         demo_messages = state.get("demo_messages", [])
-        general_messages = state.get("messages", [])
-        
-        # Находим последнее user сообщение в общей истории (это текущее сообщение)
-        if general_messages:
-            last_message = general_messages[-1]
-            if hasattr(last_message, 'type') and last_message.type == 'human':
-                # Проверяем, нет ли уже этого сообщения в demo_messages
-                message_exists = False
-                if demo_messages:
-                    last_demo = demo_messages[-1]
-                    if hasattr(last_demo, 'content') and last_demo.content == message and hasattr(last_demo, 'type') and last_demo.type == 'human':
-                        message_exists = True
-                
-                if not message_exists:
-                    # Добавляем user сообщение в demo_messages
-                    demo_messages = list(demo_messages) + [last_message]
-                    state = {**state, "demo_messages": demo_messages}
         
         # КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: Получаем конфигурацию из состояния
         config = state.get("demo_config")
@@ -372,7 +315,7 @@ class MainGraph:
             logger.info(f"❌ [DEMO] Конфигурация НЕ найдена в состоянии для chat_id={chat_id}")
             logger.info(f"📞 [DEMO] Обращаемся к demo-setup агенту для получения конфигурации")
             
-            # demo_setup получает ВСЮ общую историю (messages)
+            # demo_setup использует общую историю messages
             setup_messages = state.get("messages", [])
             setup_history = messages_to_history(setup_messages) if setup_messages else None
             

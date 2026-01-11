@@ -115,12 +115,11 @@ def filter_history_for_stage_detector(history: List[Dict[str, Any]], max_message
 
 def get_agent_history(state: Dict[str, Any], agent_name: str) -> List[BaseMessage | Dict[str, Any]]:
     """
-    Получает изолированную историю для конкретного агента.
+    Получает историю для конкретного агента.
     
     Правила:
-    - admin агент использует admin_messages (изолированная история)
-    - demo агент использует demo_messages (изолированная история)
-    - demo_setup агент использует messages (общая история - нужен весь контекст)
+    - admin и demo_setup агенты используют общую историю messages
+    - demo агент использует изолированную историю demo_messages
     
     Args:
         state: Состояние графа ConversationState
@@ -129,14 +128,12 @@ def get_agent_history(state: Dict[str, Any], agent_name: str) -> List[BaseMessag
     Returns:
         История сообщений для агента
     """
-    # demo_setup получает всю общую историю
-    if agent_name == "DemoSetupAgent":
+    # admin и demo_setup используют общую историю
+    if agent_name == "DemoSetupAgent" or agent_name == "AdminAgent":
         return state.get("messages", [])
     
-    # admin и demo используют изолированные истории
-    if agent_name == "AdminAgent":
-        return state.get("admin_messages", [])
-    elif agent_name == "DemoAgent":
+    # demo использует изолированную историю
+    if agent_name == "DemoAgent":
         return state.get("demo_messages", [])
     
     # По умолчанию возвращаем общую историю
