@@ -31,10 +31,19 @@ class ResponsesOrchestrator:
         Инициализация orchestrator
         """
         self.instructions = instructions
+        self._original_instructions = instructions  # Сохраняем оригинальную инструкцию
         self.tools_registry = tools_registry or ResponsesToolsRegistry()
         self.config = config or ResponsesAPIConfig()
         self.client = client or ResponsesAPIClient(self.config)
         self.agent_name = agent_name
+    
+    def update_instructions(self, new_instructions: str):
+        """Обновляет инструкции для следующего вызова"""
+        self.instructions = new_instructions
+    
+    def reset_instructions(self):
+        """Восстанавливает оригинальные инструкции"""
+        self.instructions = self._original_instructions
     
     def run_turn(
         self,

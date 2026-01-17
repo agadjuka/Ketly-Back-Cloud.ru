@@ -53,6 +53,9 @@ class BaseAgent:
         
         # Результат CallManager (если был вызван)
         self._call_manager_result = None
+        
+        # Сохраняем оригинальную инструкцию для восстановления
+        self._original_instruction = instruction
     
     def run(self, message: str, history: Optional[List[Dict[str, Any]]] = None, chat_id: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -121,6 +124,14 @@ class BaseAgent:
             logger.error(f"Сообщение агента: {message[:200]}")
             logger.error(f"Traceback:\n{error_traceback}")
             raise
+    
+    def update_instruction(self, new_instruction: str):
+        """Обновляет инструкцию агента (временно для следующего вызова)"""
+        self.orchestrator.update_instructions(new_instruction)
+    
+    def reset_instruction(self):
+        """Восстанавливает оригинальную инструкцию агента"""
+        self.orchestrator.reset_instructions()
     
     def __call__(self, message: str, history: Optional[List[Dict[str, Any]]] = None, chat_id: Optional[str] = None) -> str:
         """

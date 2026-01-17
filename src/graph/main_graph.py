@@ -221,6 +221,12 @@ class MainGraph:
         tool_results = result.get("tool_calls", [])
         used_tools = [tool.get("name") for tool in tool_results] if tool_results else []
         
+        # Проверяем, был ли вызван SwitchToDemoTool - устанавливаем флаг демонстрации
+        demo_was_conducted = state.get("demo_was_conducted", False)
+        if "SwitchToDemoTool" in used_tools:
+            demo_was_conducted = True
+            logger.info("✅ Установлен флаг demo_was_conducted=True (демонстрация была проведена)")
+        
         # Определяем, в какую историю сохранять сообщения
         # admin и demo_setup используют общую историю messages
         # demo использует изолированную историю demo_messages
@@ -248,6 +254,7 @@ class MainGraph:
                 "agent_name": agent_name,
                 "used_tools": used_tools,
                 "tool_results": tool_results,
+                "demo_was_conducted": demo_was_conducted,
             }
         
         # Обычный ответ агента
@@ -261,6 +268,7 @@ class MainGraph:
             "agent_name": agent_name,
             "used_tools": used_tools,
             "tool_results": tool_results,
+            "demo_was_conducted": demo_was_conducted,
         }
     
     def _handle_admin(self, state: ConversationState) -> ConversationState:
@@ -282,7 +290,48 @@ class MainGraph:
             state = {**state, "messages": messages}
             history = messages_to_history(messages) if messages else None
         
-        result = self._process_agent_result(self.admin_agent, message, history, chat_id, state, "AdminAgent")
+        # Получаем demo_config и demo_was_conducted из состояния
+        demo_config = state.get("demo_config")
+        demo_was_conducted = state.get("demo_was_conducted", False)
+        
+        # Если есть demo_config с niche, или демонстрация была проведена, обновляем инструкцию админ-агента
+        instruction_updated = False
+        if demo_config or demo_was_conducted:
+            niche = demo_config.get("niche") if demo_config else None
+            
+            if niche or demo_was_conducted:
+                # Получаем оригинальную инструкцию
+                original_instruction = self.admin_agent._original_instruction
+                
+                # Формируем блок с информацией о клиенте
+                client_info_parts = []
+                if niche:
+                    client_info_parts.append(f"Ниша: {niche} НЕ СПРАШИВАЙ СФЕРУ КЛИЕНТА ПОВТОРНО")
+                if demo_was_conducted:
+                    client_info_parts.append("Демонстрация была проведена. НЕ ПРЕДЛАГАЙ ДЕМОНСТРАЦИЮ СНОВА")
+                
+                if client_info_parts:
+                    client_info_block = "\n".join(client_info_parts)
+                    
+                    # Находим позицию блока "# Как общаться"
+                    if "# Как общаться" in original_instruction:
+                        # Вставляем информацию о клиенте перед блоком "# Как общаться"
+                        updated_instruction = original_instruction.replace(
+                            "# Как общаться",
+                            f"{client_info_block}\n\n# Как общаться"
+                        )
+                        self.admin_agent.update_instruction(updated_instruction)
+                        instruction_updated = True
+                        logger.info(f"📝 Обновлена инструкция админ-агента: niche={niche}, demo_was_conducted={demo_was_conducted}")
+                    else:
+                        logger.warning("⚠️ Блок '# Как общаться' не найден в инструкции админ-агента")
+        
+        try:
+            result = self._process_agent_result(self.admin_agent, message, history, chat_id, state, "AdminAgent")
+        finally:
+            # Восстанавливаем оригинальную инструкцию после вызова
+            if instruction_updated:
+                self.admin_agent.reset_instruction()
         
         return result
     
